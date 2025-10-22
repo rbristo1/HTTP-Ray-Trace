@@ -1,6 +1,6 @@
 
 all: main.c
-	gcc -lm -o main main.c vec3.c camera.c scene.c plugin.c sphere.c ray.c interval.c cube.c hit.c material.c
+	gcc -lm -o src/main main.c src/vec3.c src/camera.c src/scene.c src/plugin.c src/sphere.c src/ray.c src/interval.c src/cube.c src/hit.c src/material.c
 
 clean:
 	rm main
