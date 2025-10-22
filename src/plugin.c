@@ -20,7 +20,7 @@ ssize_t plugin_write(const char *output_file,
 {
     FILE * out = fopen(output_file, "w");
     char pluginName[256];
-    strcpy(pluginName, "./lib");
+    strcpy(pluginName, "./lib/lib");
     strcat(pluginName, output_type);
     strcat(pluginName, ".so");
     

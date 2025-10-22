@@ -77,6 +77,7 @@ int main(int argc, char *argv[])
     pixels = camera_mt_render(&cam, scene, 16);
 
     // Scene has been rendered! Output it as a BMP file.
+    
     plugin_write(argv[1],
                  "bmp",
                  cam.image_width,
