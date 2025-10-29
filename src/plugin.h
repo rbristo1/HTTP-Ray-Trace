@@ -2,6 +2,7 @@
 #include "vec3.h"
 #include <stdint.h>
 #include <sys/types.h>
+#include <stdio.h>
 
 /**
  * Lookup and write the pixels to a plugin library.
@@ -17,3 +18,9 @@ ssize_t plugin_write(const char *output_file,
                      uint16_t width,
                      uint16_t height,
                      const Pixel *pixels);
+
+ssize_t plugin_write_stream(FILE *output_stream,
+                            const char *output_type,
+                            uint16_t width,
+                            uint16_t height,
+                            const Pixel *pixels);

@@ -1,5 +1,4 @@
 #include "plugin.h"
-#include <stdio.h>
 #include <stdlib.h>
 #include <dlfcn.h>
 #include <string.h>
@@ -12,13 +11,12 @@
  * @param pixels the pixels to write to the file
  * @return -1 on error, number of pixels written otherwise.
  */
-ssize_t plugin_write(const char *output_file,
-                     const char *output_type,
-                     uint16_t width,
-                     uint16_t height,
-                     const Pixel *pixels) 
-{
-    FILE * out = fopen(output_file, "w");
+ssize_t plugin_write_stream(FILE *output_stream,
+                            const char *output_type,
+                            uint16_t width,
+                            uint16_t height,
+                            const Pixel *pixels) {
+
     char pluginName[256];
 
     //creates string of path to the DSO needed
@@ -56,14 +54,20 @@ ssize_t plugin_write(const char *output_file,
     }
 
     //runs DSO function
-    ssize_t ret = func(pixels, width, height, out);
+    ssize_t ret = func(pixels, width, height, output_stream);
 
     //close everything
-    fclose(out);
+    fclose(output_stream);
     dlclose(descriptor);
 
     return ret;
-
-
-        
+}
+ssize_t plugin_write(const char *output_file,
+                     const char *output_type,
+                     uint16_t width,
+                     uint16_t height,
+                     const Pixel *pixels) 
+{
+    FILE * out = fopen(output_file, "w");
+    return plugin_write_stream(out, output_type, width, height, pixels);  
 }
