@@ -5,8 +5,15 @@
 
 struct Scene;
 struct Ray;
+typedef enum {
+    SAMP_LINEAR_X,
+    SAMP_LINEAR_Y,
+    SAMP_BOX
+} SamplingStrategy;
 
 struct Camera {
+    int     samples_per_pixel;
+    SamplingStrategy sampling_strategy;
     int     image_height;
     int     image_width;
     int     max_depth;
@@ -39,6 +46,7 @@ void camera_init(struct Camera *camera);
  * There will be camera->image_height * camera->image_width number of pixels.
  * Returns NULL if the scene/camera is invalid.
  */
+
 Pixel *camera_render(const struct Camera *camera, const struct Scene *scene);
 /**
  * Linear Interpolation (LERP). 
@@ -51,4 +59,5 @@ Pixel *camera_render(const struct Camera *camera, const struct Scene *scene);
 Color lerp(double alpha, Color c1, Color c2);
 
 struct Ray get_ray(const struct Camera *camera, int row, int col);
+struct Ray get_ray_ms(const struct Camera *camera, int row, int col, int sample);
 Color ray_color(const struct Ray *r, int depth, const struct Scene *scene);

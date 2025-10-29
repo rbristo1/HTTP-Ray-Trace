@@ -20,28 +20,46 @@ ssize_t plugin_write(const char *output_file,
 {
     FILE * out = fopen(output_file, "w");
     char pluginName[256];
+
+    //creates string of path to the DSO needed
     strcpy(pluginName, "./lib/lib");
     strcat(pluginName, output_type);
     strcat(pluginName, ".so");
-    
+
+    //dynamic function definition, 
+    //returns a ssize_t, 
+    //takes parameters const Pixel*, uint16_t, uint16_t, and FILE *
     ssize_t (*func)(const Pixel*, uint16_t, uint16_t, FILE *);
+
+    //opens DSO
     void * descriptor = dlopen(pluginName, RTLD_LAZY | RTLD_LOCAL);
     if (!descriptor) {
         return -1;
     }
+
+    //builds string for the function name to be run
     char output_type_full[256];
     strcpy(output_type_full, output_type);
     strcat(output_type_full, "_write");
+
+    //clears errors if any
     dlerror();
+
+    //sets function pointer from the DSO and the name of the function
     func = dlsym(descriptor, output_type_full);
+
+    //checks error
     char* error = dlerror();
     if (error != NULL) {
         dlclose(descriptor);
         return 2;
     }
-    ssize_t ret = func(pixels, width, height, out);
-    fclose(out);
 
+    //runs DSO function
+    ssize_t ret = func(pixels, width, height, out);
+
+    //close everything
+    fclose(out);
     dlclose(descriptor);
 
     return ret;

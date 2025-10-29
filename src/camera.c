@@ -14,6 +14,7 @@ static double deg2rad(double deg)
     return M_PI * deg / 180.0;
 }
 
+
 struct Data {
     pthread_t tid;
     int rows;
@@ -28,8 +29,19 @@ void *worker(void *arg)
     ssize_t totalPixels = data->rows*data->camera->image_width;
     for (ssize_t i = data->offset; i < data->offset+data->rows; i++) {
         for (ssize_t j = 0; j < data->camera->image_width; j++) {
-            struct Ray r = get_ray(data->camera, i, j);
-            data->pixels[i*data->camera->image_width+j] = ray_color(&r, data->camera->max_depth, data->scene);
+            if (data->camera->samples_per_pixel > 0) {
+                Pixel temp = {0,0,0};
+                for (ssize_t k = 0; k < data->camera->samples_per_pixel; k++) {
+                    struct Ray r = get_ray_ms(data->camera, i, j, k);
+                    temp = vec3_add(temp, ray_color(&r, data->camera->max_depth, data->scene));
+                }
+                data->pixels[i*data->camera->image_width+j] = vec3_div_val(temp, data->camera->samples_per_pixel);
+            }
+            else {
+                struct Ray r = get_ray(data->camera, i, j);
+                data->pixels[i*data->camera->image_width+j] = ray_color(&r, data->camera->max_depth, data->scene);
+            }
+            
         }
     }
     
@@ -39,10 +51,36 @@ void *worker(void *arg)
 struct Ray get_ray(const struct Camera *camera, int row, int col) {
     Vec3 off_u = vec3_mul_val(camera->pixel_delta_u, (double)col);
     Vec3 off_v = vec3_mul_val(camera->pixel_delta_v, (double)row);
-    Point pixel_point = vec3_add(vec3_add(camera->pixel00_location, off_u), off_v);
+    
+    /*Point pixel_point = vec3_add(vec3_add(camera->pixel00_location, off_u), off_v);
+     
 
-    /* origin is look_from; direction is pixel_point - look_from */
     Vec3 dir = vec3_sub(pixel_point, camera->look_from);
+    return ray(camera->look_from, dir);*/
+    Vec3 dir = vec3_add(vec3_add(off_u, camera->pixel00_location), off_v);
+    return ray(camera->look_from, dir);
+}
+
+struct Ray get_ray_ms(const struct Camera *camera, int row, int col, int sample) {
+    if (camera->sampling_strategy == SAMP_LINEAR_X) {
+        double delta = (double)sample / camera->samples_per_pixel;
+        col += delta;
+    }
+    else if (camera->sampling_strategy == SAMP_LINEAR_Y) {
+        double delta = (double)sample / camera->samples_per_pixel;
+        row += delta;
+    }
+    else {
+        double side = sqrt(camera->samples_per_pixel);
+        col += sample / side;
+        row += fmod(sample, side);
+    }
+    Vec3 off_u = vec3_mul_val(camera->pixel_delta_u, (double)col);
+    Vec3 off_v = vec3_mul_val(camera->pixel_delta_v, (double)row);
+    //Point pixel_point = vec3_add(vec3_add(camera->pixel00_location, off_u), off_v);
+
+    
+    Vec3 dir = vec3_add(vec3_add(off_u, camera->pixel00_location), off_v);
     return ray(camera->look_from, dir);
 }
 
@@ -70,6 +108,13 @@ Color ray_color(const struct Ray *r, int depth, const struct Scene *scene) {
 }
 /*
 struct Camera {
+    typedef enum {
+        SAMP_LINEAR_X,
+        SAMP_LINEAR_Y,
+        SAMP_BOX
+    } SamplingStrategy;
+    int     samples_per_pixel;
+    SamplingStrategy sampling_strategy;
     int     image_height;
     int     image_width;
     int     max_depth;
@@ -93,7 +138,10 @@ struct Camera {
  
 struct Camera camera(int image_width, int image_height)
 {
+    
     struct Camera ret = {0};
+    ret.samples_per_pixel = 0;
+    ret.sampling_strategy = SAMP_LINEAR_X;
     ret.image_height = image_height;
     ret.image_width = image_width;
     ret.max_depth = 10;
@@ -134,8 +182,20 @@ Pixel *camera_render(const struct Camera *camera, const struct Scene *scene)
     Pixel *pixels = calloc(totalPixels, sizeof(Pixel));
     for (ssize_t i = 0; i < camera->image_height; i++) {
         for (ssize_t j = 0; j < camera->image_width; j++) {
-            struct Ray r = get_ray(camera, i, j);
-            pixels[i*camera->image_width+j] = ray_color(&r, camera->max_depth, scene);
+            if (camera->samples_per_pixel > 0) {
+                Pixel temp = {0,0,0};
+                for (ssize_t k = 0; k < camera->samples_per_pixel; k++) {
+                    struct Ray r = get_ray_ms(camera, i, j, k);
+                    temp = vec3_add(temp, ray_color(&r, camera->max_depth, scene));
+                }
+                pixels[i*camera->image_width+j] = vec3_div_val(temp, camera->samples_per_pixel);
+            }
+            else {
+                struct Ray r = get_ray(camera, i, j);
+                pixels[i*camera->image_width+j] = ray_color(&r, camera->max_depth, scene);
+            }
+            
+            
         }
     }
 
