@@ -57,7 +57,7 @@ ssize_t plugin_write_stream(FILE *output_stream,
     ssize_t ret = func(pixels, width, height, output_stream);
 
     //close everything
-    fclose(output_stream);
+    //fclose(output_stream);
     dlclose(descriptor);
 
     return ret;

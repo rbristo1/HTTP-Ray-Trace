@@ -18,12 +18,12 @@ size_t rto_write(const Pixel *pixels, uint16_t width, uint16_t height, FILE *fou
     printf("<%d> <%d>", width, height);
     //printf("Testing raytracer output (.rto) writer.");
     for (size_t i = 0; i < pixelCount; i++) {
-        uint8_t r = pixels[i].r*256;
-        uint8_t g = pixels[i].g*256;
-        uint8_t b = pixels[i].b*256;
+        uint8_t r = pixels[i].r*255;
+        uint8_t g = pixels[i].g*255;
+        uint8_t b = pixels[i].b*255;
         int x = i%width;
         int y = i/width;
-        printf("<%d,%d %d> <%d,%d %d> <%d,%d %d>\n", x, y, r, x, y, g, x, y, b);
+        //printf("<%d,%d %d> <%d,%d %d> <%d,%d %d>\n", x, y, r, x, y, g, x, y, b);
         fwrite(&r, sizeof(uint8_t), 1, fout);
         fwrite(&g, sizeof(uint8_t), 1, fout);
         fwrite(&b, sizeof(uint8_t), 1, fout);

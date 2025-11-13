@@ -17,59 +17,78 @@
 #include <stdlib.h>
 #include <stdint.h>
 #include <string.h>
+#include <signal.h>
+#include <sys/types.h>
+#include <sys/wait.h>
+#include <errno.h>
 #define SEED time(NULL)
-
+int s;
+bool die = false;
+pid_t pid = -1;
+pid_t *children = NULL;
+size_t children_count = 0;
+size_t children_cap = 0;
 void intToStr(uint64_t num, char *str) {
     sprintf(str, "%d", num);
 }
-
-void server_start() {
-    
-    srand(SEED);
-    int Connection = 1;
-    int back = 5;
-    int s, c;
-    struct sockaddr_in sin = {0};
-    struct sockaddr_in cin = {0};
-    s = socket(AF_INET, SOCK_STREAM, 0);
-    if(s == -1) {
-        perror("socket");
-        return;
+void add_child(pid_t pid) {
+    if (children_count == children_cap) {
+        children = realloc(children, sizeof(pid_t) * (children_cap+1));
+        children_cap++;
     }
-
-    //memset(&sin, 0, sizeof(sin));
-    sin.sin_family = AF_INET;
-    sin.sin_port = htons(8177);
-    unsigned int a = 0;
-    //localhost:8177
-    a |= (127 << 24);
-    a |= (0 << 16);
-    a |= (0 << 8);
-    a |= 1;
-    sin.sin_addr.s_addr = htonl(a);
-    int opt = 1;
-    setsockopt(s, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
-    if (bind(s, (struct sockaddr*)&sin, sizeof(sin)) == -1) {
-        perror("bind");
+    children[children_count++] = pid;
+}
+void remove_child(pid_t pid) {
+    for (size_t i = 0; i < children_count; ++i) {
+        if (children[i] == pid) {
+            children[i] = children[--children_count];
+            return;
+        }
+    }
+}
+void removeChildren() {
+    int status;
+    pid_t pid;
+    while ((pid = waitpid(-1, &status, WNOHANG)) > 0) {
+        remove_child(pid);
+    }
+}
+void sighandler(int sig) {
+    if (SIGINT == sig) {
+        fprintf(stderr, "Quitting!\n");
+        if (pid == 0) {
+            die = true;
+            return;
+        }
+        die = true;
+        server_stop();
+    }
+    if (SIGQUIT == sig) {
+        printf("SIGQUIT\n");
+        shutdown(s, SHUT_RDWR);
         close(s);
+        die = true;
+    }
+    if (SIGUSR1 == sig) {
         return;
     }
-    
-    if (listen(s, back) == -1) {
-        perror("listen");
-        close(s);
+    if (SIGHUP == sig) {
+        printf("SIGHUP\n");
+        if (pid == 0) {
+            die = true;
+            return;
+        }
         return;
     }
-    socklen_t temp = sizeof(cin);
-    while(Connection == 1) {
-    c = accept(s, (struct sockaddr*)&cin, &temp);
-    if (c == -1) {
-        perror("accept");
-        close(s);
-        return;
-    }
-    printf("Connection accepted from %s:%d\n", inet_ntoa(cin.sin_addr), ntohs(cin.sin_port));
+}
+void servWorker(int c, struct sockaddr_in sin, struct sockaddr_in cin, int * Connection) {
     ssize_t n;
+    char buf[256];
+    n = recv(c, buf, 256, MSG_NOSIGNAL);
+    if (n == -1) {
+        
+        return;
+    }
     
     int request = 0;
     int header = 0;
@@ -102,16 +121,15 @@ void server_start() {
     SamplingStrategy sampMethType;
     Pixel *pixels;
     RingBuffer * rb = rb_new(256);
-    char buf[256];
-
-
-    while ((n = recv(c, buf, 256, 0)) > 0) {
+    while (n >= 0) {
+        
         char parse[256] = "";
         rb_write(rb, buf, n);
         if (request == 0) {
+
             for(int i  = 0; i < 256; i++) {
                 if (!rb_pop(rb, &parse[i])) {
-                    n = recv(c, buf, 256, 0);
+                    n = recv(c, buf, 256, MSG_NOSIGNAL);
                     rb_write(rb, buf, n);
                     if (n == 0) {
                         perror("request");
@@ -132,12 +150,13 @@ void server_start() {
         if (header == 0) {
             for(int i = 0; i < 256; i++) {
                 if (!rb_pop(rb, &parse[i])) {
-                    n = recv(c, buf, 256, 0);
+                    n = recv(c, buf, 256, MSG_NOSIGNAL);
                     rb_write(rb, buf, n);
                     if (n == 0) {
                         perror("header");
                         return;
                     }
+                    printf("%s", buf);
                 }
                 else {
                     if (parse[i] == '\n') {
@@ -174,11 +193,11 @@ void server_start() {
                             }
                             else if (strcmp(dataType, "Connection:") == 0) {
                                 if(strcmp(dataVal, "keep-alive") == 0) {
-                                    Connection = 1;
+                                    *Connection = 1;
                                     printf("Connection: c\n");
                                 }
                                 else {
-                                    Connection = 0;
+                                    *Connection = 0;
                                     printf("Connection: dc\n");
                                 }
                             }
@@ -190,23 +209,24 @@ void server_start() {
                 }
                 
             }
+            
             char err2[64] = "HTTP/1.1 411 Length Required\r\n";
             char err3[64] = "HTTP/1.1 415 Unsupported Media Type\r\n";
             if (Content_Length == 0) {
                 printf("err2");
-                send(c, err2, strlen(err2), 0);
+                send(c, err2, strlen(err2), MSG_NOSIGNAL);
                 return;
             }
             if (strcmp(Accept, "err") == 0) {
                 printf("err3");
-                send(c, err3, strlen(err3), 0);
+                send(c, err3, strlen(err3), MSG_NOSIGNAL);
                 return;
             }
             printf("reached data\n");
             if (data == 0) {
                 printf("exec data\n");
 
-                char *str = malloc(Content_Length + 1); // +1 for '\0'
+                char *str = malloc(Content_Length + 1); 
                 if (!str) {
                     perror("malloc");
                     return;
@@ -214,13 +234,11 @@ void server_start() {
 
                 size_t total_read = 0;
 
-                // Read any leftover bytes already in the ring buffer
                 size_t from_rb = rb_read(rb, str, Content_Length);
                 total_read += from_rb;
 
-                // Continue reading until Content-Length is satisfied
                 while (total_read < (size_t)Content_Length) {
-                    ssize_t n = recv(c, str + total_read, Content_Length - total_read, 0);
+                    ssize_t n = recv(c, str + total_read, Content_Length - total_read, MSG_NOSIGNAL);
                     if (n <= 0) {
                         perror("recv");
                         free(str);
@@ -228,9 +246,9 @@ void server_start() {
                     }
                     total_read += n;
                 }
-
-                str[Content_Length] = '\0';
                 
+                str[Content_Length] = '\0';
+                printf("String: %s", str);
 
                 for (int i = 0; i<strlen(str); i++) {
                     if (str[i] == '=' || str[i] == '+' || str[i] == '&') {
@@ -239,10 +257,7 @@ void server_start() {
                 }
                 printf("%s\n", str);
                 char* token = strtok(str, " ");
-                // Keep printing tokens while one of the
-                // delimiters present in str[].
                 while (token != NULL) {
-                    //printf("%s\n", token);
                     if(strcmp(token, "camera_dimensions") == 0) {
                         printf("dimensions\n");
                         camera_dimensions = 1;
@@ -494,21 +509,21 @@ void server_start() {
                 if (camera_dimensions + camera_look_from +
                 camera_look_at + camera_up + camera_max_depth + camera_vfov +
                 camera_focus_dist + scene_bg + threads + samples + sampMeth != 11) {
-                    send(c, err1, strlen(err1), 0);
+                    send(c, err1, strlen(err1), MSG_NOSIGNAL);
                     printf("err1");
                 }
                 else {
-                    send(c, succ, strlen(succ), 0);
+                    send(c, succ, strlen(succ), MSG_NOSIGNAL);
                     printf("succ");
                 }
                 char Content_type[256] = "Content-Type: ";
                 strcat(Content_type, ContType);
                 strcat(Content_type, "\r\n");
-                send(c, Content_type, strlen(Content_type), 0);
+                send(c, Content_type, strlen(Content_type), MSG_NOSIGNAL);
                 char Content_disposition[256] = "Content-Disposition: attachment; filename=\"rt_image.";
                 strcat(Content_disposition, Accept);
                 strcat(Content_disposition, "\"\r\n");
-                send(c, Content_disposition, strlen(Content_disposition), 0);
+                send(c, Content_disposition, strlen(Content_disposition), MSG_NOSIGNAL);
                 char content_length[256] = "Content-Length: ";
                 uint64_t size = 0;
                 for (int i = 0;i < num_spheres;i+=1) {
@@ -537,22 +552,21 @@ void server_start() {
                 intToStr(size, temp);
                 strcat(content_length, temp);
                 strcat(content_length, "\r\n");
-                send(c, content_length, strlen(content_length), 0);
+                send(c, content_length, strlen(content_length), MSG_NOSIGNAL);
 
                 char connection[256] = "Connection: ";
-                if (Connection == 1) {
+                if (*Connection == 1 && !die) {
                     strcat(connection, "keep-alive\r\n");
                 }
                 else {
                     strcat(connection, "close\r\n");
                 }
-                send(c, connection, strlen(connection), 0);
+                send(c, connection, strlen(connection), MSG_NOSIGNAL);
                 
                 char Access_Control_Allow_Origin[256] = "Access-Control-Allow-Origin: *\r\n";
-                send(c, Access_Control_Allow_Origin, strlen(Access_Control_Allow_Origin), 0);
+                send(c, Access_Control_Allow_Origin, strlen(Access_Control_Allow_Origin), MSG_NOSIGNAL);
                 char linebreak[3] = "\r\n";
-                send(c, linebreak, strlen(linebreak), 0);
-                //printf("Threads: %d\n", );
+                send(c, linebreak, strlen(linebreak), MSG_NOSIGNAL);
                 printf("Camera setup:\n");
                 printf("  dim %d x %d\n", cam.image_width, cam.image_height);
                 printf("%lf %lf %lf  look_from\n", cam.look_from.x, cam.look_from.y, cam.look_from.z);
@@ -563,20 +577,15 @@ void server_start() {
                 printf("  max_depth: %d\n", cam.max_depth);
                 printf("Scene objects: %d spheres, %d cubes\n", num_spheres, num_cubes);
                 if (NULL != pixels) {
-                    FILE *sock_fp = fdopen(dup(c), "wb"); // duplicate FD
+                    FILE *sock_fp = fdopen(c, "wb"); 
                     if (!sock_fp) {
                         perror("fdopen");
                     } else {
                         plugin_write_stream(sock_fp, Accept,
                                             cam.image_width, cam.image_height,
                                             pixels);
-                        /*plugin_write("./test.bmp",
-                        "bmp",
-                        cam.image_width,
-                        cam.image_height,
-                        pixels);*/
-                        //fflush(sock_fp);
-                        //fclose(sock_fp); // important!
+                        fflush(sock_fp);
+                        fclose(sock_fp);
                     }
                 }
                 else {
@@ -584,6 +593,11 @@ void server_start() {
                 }
 
             
+            }
+            if (die) {
+                shutdown(c, SHUT_RDWR);
+                free(children);
+                close(c);
             }
             
             data = 1;
@@ -594,36 +608,141 @@ void server_start() {
         
     }
     
-    close(c);
-    free(cu);
-    free(sp);
+    
     data = 0;
     header = 0;
     request = 0;
     Content_Length = 0;
     Accept[0] = '\0';
     ContType[0] = '\0';
+    free(sp);
+    free(cu);
     scene_free(scene);
-    //free(scene);
-    free(pixels);
+    if (pixels) {
+        free(pixels);
+    }
     rb_free(rb);
     if (n < 0) {
         perror("recv");
         return;
     }
+    if (die) {
+        exit(EXIT_SUCCESS);
+    }
+}
 
+void clientNew(int c, struct sockaddr_in sin, struct sockaddr_in cin);
+void server_start() {
+    signal(SIGINT, sighandler);
+    signal(SIGHUP, sighandler);
+    signal(SIGQUIT, sighandler);
+    signal(SIGUSR1, sighandler);
+
+    srand(SEED);
+    int c;
+    struct sockaddr_in sin = {0};
+    struct sockaddr_in cin = {0};
+    socklen_t temp = sizeof(cin);
+    
+    s = socket(AF_INET, SOCK_STREAM , 0);
+    if (s == -1) {
+        perror("socket");
+
+        return;
+    }
+
+    sin.sin_family = AF_INET;
+    sin.sin_port = htons(8177);
+
+    unsigned int a = 0;
+    a |= (127 << 24);
+    a |= (0 << 16);
+    a |= (0 << 8);
+    a |= 1;
+    sin.sin_addr.s_addr = htonl(a);
+
+    if (bind(s, (struct sockaddr*)&sin, sizeof(sin)) == -1) {
+        perror("bind");
+        close(s);
+        return;
+    }
+
+    if (listen(s, 5) == -1) {
+        perror("listen");
+        close(s);
+        return;
+    }
+
+    printf("Server listening on %s:%d\n", inet_ntoa(sin.sin_addr), ntohs(sin.sin_port));
+
+    while (true) {
+        usleep(5000);
+        if (!die) {
+            c = accept(s, (struct sockaddr*)&cin, &temp);
+        }
+        
+       
+
+        
+        if (c != -1) {
+            
+            printf("Connection accepted from %s:%d\n", inet_ntoa(cin.sin_addr), ntohs(cin.sin_port));
+            pid = fork();
+            if (pid < 0) {
+                perror("fork");
+                close(c);
+                continue;
+            }
+
+            if (pid == 0) {
+                // Child process
+
+                close(s); // child doesn't need the listening socket
+                clientNew(c, sin, cin);
+                //close(c);
+                return;
+            } else {
+                add_child(pid);
+                // Parent process
+                close(c); 
+            }
+
+        }
+        removeChildren();
+
+        
+        
     }
     close(s);
     
-        
-
-    
     printf("Server closed.\n");
-
-    return;
-
 }
 
+void clientNew(int c, struct sockaddr_in sin, struct sockaddr_in cin) {
+    int Connection = 1;
+    while (Connection == 1 && !die) {
+        servWorker(c, sin, cin, &Connection);
+        usleep(200000);
+        printf("Client Connected\n");
+    }
+    free(children);
+    close(c);
+    exit(0);
+}
 void server_stop() {
+    shutdown(s, SHUT_RDWR);
+    close(s);
 
+    for (size_t i = 0; i < children_count; i++) {
+        pid_t p = children[i];
+        while (waitpid(p, NULL, 0) == -1) {
+            if (errno == EINTR) continue;
+            break;
+        }
+    }
+    free(children);
+    children = NULL;
+
+    printf("###############################################################################################################################################################################################################################################################################################################################################\n");
+    exit(EXIT_SUCCESS);
 }

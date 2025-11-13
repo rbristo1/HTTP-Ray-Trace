@@ -95,6 +95,9 @@ bool scene_trace(const struct Scene *scene, const struct Ray *ray, struct Interv
  * individual objects, but only pointers to them.
  */
 void scene_free(struct Scene *scene) {
-    free(scene->objects);
+    if (!scene) return;
+    if (scene->objects) {
+        free(scene->objects);
+    } 
     free(scene);
 }

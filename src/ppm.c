@@ -11,9 +11,9 @@ size_t ppm_write(const Pixel *pixels, uint16_t width, uint16_t height, FILE *fou
         uint8_t r;
         uint8_t g;
         uint8_t b;
-        r = pixels[i].r*256;
-        g = pixels[i].g*256;
-        b = pixels[i].b*256;
+        r = pixels[i].r*255;
+        g = pixels[i].g*255;
+        b = pixels[i].b*255;
         if (((i+1)%(width)) != 0 || i == 0) {
             fprintf(fout, "%-3d %-3d %-3d    ", r, g, b);
         }

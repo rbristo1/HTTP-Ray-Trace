@@ -58,9 +58,9 @@ size_t bmp_write(const Pixel *pixels, uint16_t width, uint16_t height, FILE *fou
     //printf("Testing raytracer output (.rto) writer.");
     for (int i = height-1; i >= 0; i--) {
         for (int j = 0; j < width; j++) {
-            uint8_t b = pixels[i*width+j].b*256;
-            uint8_t g = pixels[i*width+j].g*256;
-            uint8_t r = pixels[i*width+j].r*256;
+            uint8_t b = pixels[i*width+j].b*255;
+            uint8_t g = pixels[i*width+j].g*255;
+            uint8_t r = pixels[i*width+j].r*255;
 
             fwrite(&b, sizeof(uint8_t), 1, fout);
             fwrite(&g, sizeof(uint8_t), 1, fout);
