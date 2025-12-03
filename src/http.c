@@ -58,6 +58,7 @@ void sighandler(int sig) {
         fprintf(stderr, "Quitting!\n");
         if (pid == 0) {
             die = true;
+            server_stop();
             return;
         }
         die = true;
